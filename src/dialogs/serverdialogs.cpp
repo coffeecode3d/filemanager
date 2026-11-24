@@ -37,6 +37,8 @@ public:
         , m_pressed(std::move(pressed))
         , m_removed(std::move(removed))
     {
+        // The list's column gives a row its hint's width; the address fills it.
+        setLayoutHints({.fillWidth = true});
         setTracksHover(true);
         m_icon = addChild<ui::ThemeIcon>("network-server", 16);
         m_icon->setThemeSize(16);
