@@ -52,6 +52,8 @@ public:
     void updateSelection(const std::string& path);
     // The Connect to Server dialog, over the window.
     void connectToServer();
+    // A network address from the location field, connected to directly.
+    void connectToLocation(const std::string& address);
 
     std::function<void(const std::string& path)> onClicked;
     std::function<void(const std::string& path)> onOpenInNewTab;

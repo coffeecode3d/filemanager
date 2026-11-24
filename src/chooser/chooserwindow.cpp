@@ -77,6 +77,9 @@ public:
         std::string category = "Favorites";
         for (int i = 0; i < m_places.count(); ++i) {
             const PlacesModel::Place& place = m_places.at(i);
+            // Connecting and servers not mounted are the window's own rows.
+            if (place.connectAction || place.savedNetwork)
+                continue;
             Row row;
             row.index = i;
             if (place.category != category) {

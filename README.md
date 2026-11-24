@@ -20,6 +20,14 @@ sudo apt install build-essential cmake pkg-config libicu-dev libarchive-dev libz
     liblzma-dev liblzfse-dev libgtest-dev
 ```
 
+## Network drives
+
+Connect to an SMB share or an SFTP server from Network ▸ Connect to Server…
+(Ctrl+K), or type its address, such as `smb://nas/media`, in the location
+field. A server that connected before stays under Network as an unmounted
+drive: click it to connect again, or right-click it to remove it. Mounted
+shares are disconnected from the same row's menu.
+
 ## Build
 
 ```shell

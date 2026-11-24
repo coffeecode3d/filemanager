@@ -126,6 +126,50 @@ static int rowOf(const PlacesModel& places, const std::string& udi)
     return -1;
 }
 
+TEST(PlacesModelTest, NetworkDrivesRememberServersAndListTheConnectingRow)
+{
+    TemporaryDir config;
+    ASSERT_TRUE(config.isValid());
+    const std::string settings = config.filePath("filemanager.conf");
+    ASSERT_TRUE(fmtest::writeFile(settings,
+                                  "[Network]\nrecentServers=smb://nas/media,sftp://me@example.org\n"));
+    PlacesModel places(false, settings);
+
+    int connectRow = -1;
+    for (int row = 0; row < places.count(); ++row) {
+        if (places.at(row).connectAction)
+            connectRow = row;
+    }
+    ASSERT_GE(connectRow, 0);
+    EXPECT_EQ(places.at(connectRow).name, "Connect to Server…");
+    EXPECT_EQ(places.at(connectRow).category, "Network");
+    EXPECT_FALSE(places.at(connectRow).isDevice());
+
+    const int mediaRow = rowOf(places, "smb://nas/media");
+    ASSERT_GE(mediaRow, 0);
+    EXPECT_TRUE(places.at(mediaRow).savedNetwork);
+    EXPECT_FALSE(places.at(mediaRow).isDevice());
+    EXPECT_EQ(places.at(mediaRow).name, "media (nas)");
+    EXPECT_EQ(places.at(mediaRow).category, "Network");
+    // The row that connects comes before the servers it lists.
+    EXPECT_LT(connectRow, mediaRow);
+
+    const int serverRow = rowOf(places, "sftp://me@example.org");
+    ASSERT_GE(serverRow, 0);
+    EXPECT_EQ(places.at(serverRow).name, "me@example.org");
+
+    EXPECT_EQ(places.recentServers().size(), 2u);
+
+    places.removeRecentServer("smb://nas/media");
+    EXPECT_EQ(rowOf(places, "smb://nas/media"), -1);
+    ASSERT_EQ(places.recentServers().size(), 1u);
+    EXPECT_EQ(places.recentServers().front(), "sftp://me@example.org");
+
+    PlacesModel restored(false, settings);
+    EXPECT_EQ(rowOf(restored, "smb://nas/media"), -1);
+    EXPECT_GE(rowOf(restored, "sftp://me@example.org"), 0);
+}
+
 static int managedObjects(sd_bus_message* raw, void* data, sd_bus_error*)
 {
     const base::dbus::Message message(raw);

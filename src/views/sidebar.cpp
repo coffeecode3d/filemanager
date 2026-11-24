@@ -333,6 +333,11 @@ protected:
             return;
         }
 
+        if (m_pressedButton == ui::MouseButton::Right && row < 0 && rowAt(event.position) < 0) {
+            openEmptyMenu(event.position);
+            return;
+        }
+
         if (row < 0 || row != rowAt(event.position) || row >= places.count())
             return;
         const PlacesModel::Place place = places.at(row);
@@ -352,10 +357,15 @@ protected:
             return;
         }
 
-        if (place.isDevice() && place.setupNeeded())
+        if (place.connectAction) {
+            m_sidebar->connectToServer();
+        } else if (place.savedNetwork) {
+            places.connectToServer(place.url);
+        } else if (place.isDevice() && place.setupNeeded()) {
             places.requestSetup(row);
-        else if (m_sidebar->onClicked)
+        } else if (m_sidebar->onClicked) {
             m_sidebar->onClicked(!place.path().empty() ? place.path() : place.url);
+        }
     }
 
     void openMenu(int row, ui::PointF position)
@@ -364,19 +374,30 @@ protected:
         const PlacesModel::Place place = places.at(row);
         const std::string target = !place.path().empty() ? place.path() : place.url;
         const bool favorite = row < places.favoriteCount();
+        const bool network = place.category == "Network";
         const bool eject = place.isDevice() && place.canEject;
         const bool unmount = place.isDevice() && !place.setupNeeded() && !place.path().empty() && place.path() != "/";
 
         m_menu = std::make_unique<ui::Menu>();
-        const size_t newTab = m_menu->addItem(tr("Open In New Tab"), [this, target] {
-            if (m_sidebar->onOpenInNewTab)
-                m_sidebar->onOpenInNewTab(target);
-        });
-        m_menu->setItemEnabled(newTab, !place.isDevice() || !place.setupNeeded());
-        m_menu->addItem(tr("Open In New Window"), [this, target] {
-            if (m_sidebar->onOpenInNewWindow)
-                m_sidebar->onOpenInNewWindow(target);
-        });
+        if (place.connectAction) {
+            m_menu->addItem(tr("Connect to Server…"), [this] { m_sidebar->connectToServer(); });
+        } else if (place.savedNetwork) {
+            const std::string address = place.url;
+            m_menu->addItem(tr("Connect"), [this, address] { m_sidebar->connectToLocation(address); });
+            m_menu->addSeparator();
+            m_menu->addItem(tr("Remove from Network Drives"),
+                            [this, address] { m_sidebar->places().removeRecentServer(address); });
+        } else {
+            const size_t newTab = m_menu->addItem(tr("Open In New Tab"), [this, target] {
+                if (m_sidebar->onOpenInNewTab)
+                    m_sidebar->onOpenInNewTab(target);
+            });
+            m_menu->setItemEnabled(newTab, !place.isDevice() || !place.setupNeeded());
+            m_menu->addItem(tr("Open In New Window"), [this, target] {
+                if (m_sidebar->onOpenInNewWindow)
+                    m_sidebar->onOpenInNewWindow(target);
+            });
+        }
         if (favorite) {
             m_menu->addSeparator();
             m_menu->addItem(tr("Remove from Favorites"), [this, url = place.url] {
@@ -395,12 +416,26 @@ protected:
             });
         }
         if (unmount) {
-            m_menu->addItem(tr("Unmount"), [this, udi = place.udi] {
+            const std::string text = network ? std::string(tr("Disconnect")) : std::string(tr("Unmount"));
+            m_menu->addItem(text, [this, udi = place.udi] {
                 PlacesModel& places = m_sidebar->places();
                 if (const int current = deviceRow(places, udi); current >= 0)
                     places.requestTeardown(current);
             });
         }
+        showMenu(row, position);
+    }
+
+    // Right-clicking under the rows, where a new row could go.
+    void openEmptyMenu(ui::PointF position)
+    {
+        m_menu = std::make_unique<ui::Menu>();
+        m_menu->addItem(tr("Connect to Server…"), [this] { m_sidebar->connectToServer(); });
+        showMenu(-1, position);
+    }
+
+    void showMenu(int row, ui::PointF position)
+    {
         m_menuRow = row;
         m_menu->onClosed = [this] {
             m_menuRow = -1;
@@ -590,6 +625,11 @@ void SideBar::connectToServer()
         };
     }
     m_connectDialog->show();
+}
+
+void SideBar::connectToLocation(const std::string& address)
+{
+    m_places->connectToServer(address);
 }
 
 void SideBar::askPassword(std::string address, std::string user, std::string domain, bool needsDomain,

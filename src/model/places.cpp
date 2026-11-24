@@ -4,7 +4,6 @@
 #include "model/places.h"
 #include "core/config.h"
 #include "core/mounts.h"
-#include "core/preferences.h"
 #include "core/standardfolders.h"
 #include "ops/operations.h"
 
@@ -16,6 +15,7 @@
 #include "ui/drag.h"
 
 #include "cutefish/files/file_item.h"
+#include "cutefish/files/url.h"
 #include "cutefish/files/volume_manager.h"
 
 #include <algorithm>
@@ -36,6 +36,49 @@ static constexpr const char* kFavorites = trNoop("Favorites");
 static constexpr const char* kLocations = trNoop("Locations");
 static constexpr const char* kInternalDrives = trNoop("Internal Drives");
 static constexpr const char* kNetwork = trNoop("Network");
+static constexpr const char* kConnectServer = trNoop("Connect to Server…");
+static constexpr size_t kMaxRecentServers = 10;
+
+// What one mount serves, without the share in the address: the full
+// scheme://user@host[:port] and the same without the account, which an address
+// typed without one is compared by. "smb://me@nas/media" and
+// "smb://me@nas/docs" share one.
+struct ServerKeys
+{
+    std::string full;
+    std::string host;
+};
+
+static ServerKeys serverKeys(const std::string& address)
+{
+    const std::string normalized = MountsClient::normalizedAddress(address);
+    if (normalized.empty())
+        return {};
+    const files::Url url(normalized);
+    std::string host = url.host();
+    if (url.port() > 0)
+        host += ':' + std::to_string(url.port());
+    ServerKeys keys;
+    keys.host = url.scheme() + "://" + host;
+    keys.full = url.scheme() + "://" + (url.userInfo().empty() ? std::string() : url.userInfo() + '@') + host;
+    return keys;
+}
+
+// "media (nas)" for smb://nas/media, "me@nas" for a server with no share.
+static std::string serverDisplayName(const std::string& address)
+{
+    const std::string normalized = MountsClient::normalizedAddress(address);
+    if (normalized.empty())
+        return address;
+    const files::Url url(normalized);
+    const std::string host = url.userInfo().empty() ? url.host() : url.userInfo() + '@' + url.host();
+    std::string path = url.path();
+    while (path.size() > 1 && path.back() == '/')
+        path.pop_back();
+    if (path.empty() || path == "/")
+        return host;
+    return path.substr(path.rfind('/') + 1) + " (" + host + ')';
+}
 
 static std::string settingsPath()
 {
@@ -158,6 +201,7 @@ PlacesModel::PlacesModel(bool volumes, std::string settingsFile, base::dbus::Con
     m_items.push_back(trash);
 
     m_subscriptions.push_back(MountsClient::instance().mountsChanged.connect([this] { syncMounts(); }));
+    m_subscriptions.push_back(recentServersChanged.connect([this] { syncMounts(); }));
     syncMounts();
     if (m_volumes) {
         for (const files::Volume& volume : m_volumes->volumes())
@@ -173,6 +217,14 @@ PlacesModel::~PlacesModel()
 void PlacesModel::retranslate()
 {
     for (Place& place : m_items) {
+        if (place.connectAction) {
+            place.name = tr(kConnectServer);
+            continue;
+        }
+        if (place.savedNetwork) {
+            place.name = serverDisplayName(place.url);
+            continue;
+        }
         if (place.isDevice())
             continue;
         if (place.url == "trash:///") {
@@ -209,9 +261,27 @@ int PlacesModel::favoriteCount() const
 
 void PlacesModel::syncMounts()
 {
+    // The Network section is rebuilt whole: the row that connects, the mounts
+    // mountd serves now, and the servers kept from earlier with no mount.
+    std::erase_if(m_items, [](const Place& place) { return place.category == kNetwork; });
+
+    Place connect;
+    connect.name = tr(kConnectServer);
+    connect.iconName = "list-add-symbolic";
+    connect.category = kNetwork;
+    connect.connectAction = true;
+    m_items.push_back(connect);
+
     std::set<std::string> present;
+    std::set<std::string> mountedServers;
+    std::set<std::string> mountedHosts;
     for (const MountsClient::Mount& mount : MountsClient::instance().mounts()) {
         present.insert(mount.id);
+        if (mount.network) {
+            const ServerKeys keys = serverKeys(mount.id);
+            mountedServers.insert(keys.full);
+            mountedHosts.insert(keys.host);
+        }
         files::Volume volume;
         volume.id = mount.id;
         volume.name = mount.name;
@@ -232,8 +302,24 @@ void PlacesModel::syncMounts()
         insertLocation(place, mount.network ? kNetwork : kLocations);
     }
 
+    for (const std::string& address : recentServers()) {
+        const ServerKeys keys = serverKeys(address);
+        // An address typed with no account is the server under any of them.
+        const bool mounted = mountedServers.contains(keys.full)
+                || (!keys.full.empty() && keys.full == keys.host && mountedHosts.contains(keys.host));
+        if (address.empty() || mounted)
+            continue;
+        Place place;
+        place.name = serverDisplayName(address);
+        place.iconName = "network-server";
+        place.url = address;
+        place.udi = address;
+        place.savedNetwork = true;
+        insertLocation(place, kNetwork);
+    }
+
     std::erase_if(m_items, [&present](const Place& place) {
-        return isMountId(place.udi) && !present.contains(place.udi);
+        return !place.savedNetwork && !place.connectAction && isMountId(place.udi) && !present.contains(place.udi);
     });
     changed.emit();
 }
@@ -287,12 +373,22 @@ void PlacesModel::deviceRemoved(const std::string& id)
 
 std::vector<std::string> PlacesModel::recentServers() const
 {
-    return Preferences::instance().recentServers();
+    base::Settings settings(m_settingsFile);
+    return settings.stringListValue("Network/recentServers");
 }
 
 void PlacesModel::addRecentServer(const std::string& address)
 {
-    Preferences::instance().addRecentServer(address);
+    if (address.empty())
+        return;
+    std::vector<std::string> servers = recentServers();
+    std::erase(servers, address);
+    servers.insert(servers.begin(), address);
+    if (servers.size() > kMaxRecentServers)
+        servers.resize(kMaxRecentServers);
+    base::Settings settings(m_settingsFile);
+    settings.setValue("Network/recentServers", servers);
+    settings.sync();
     recentServersChanged.emit();
 }
 
