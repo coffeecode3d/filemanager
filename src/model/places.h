@@ -42,8 +42,13 @@ public:
         // An encrypted disk that takes a passphrase before it can be mounted.
         bool locked = false;
         bool accessible = false;
+        // A server kept from an earlier connection, with no mount right now:
+        // clicking it connects and opens it.
+        bool savedNetwork = false;
+        // The row that opens Connect to Server, first under Network.
+        bool connectAction = false;
 
-        bool isDevice() const { return !udi.empty(); }
+        bool isDevice() const { return !udi.empty() && !savedNetwork && !connectAction; }
         bool setupNeeded() const { return (hasFilesystem || locked) && !accessible; }
         // A local path, or the URL for the trash.
         std::string path() const;

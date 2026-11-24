@@ -9,7 +9,6 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace cutefish::base {
 class Settings;
@@ -70,10 +69,6 @@ public:
     // In every folder, the desktop's included.
     bool showHiddenFiles() const { return m_showHiddenFiles; }
     void setShowHiddenFiles(bool show);
-
-    // [Network] recentServers, newest first, at most ten.
-    std::vector<std::string> recentServers() const;
-    void addRecentServer(const std::string& address);
 
     // Any of the above changed.
     // Changes stay in memory, the file untouched (tools and tests).

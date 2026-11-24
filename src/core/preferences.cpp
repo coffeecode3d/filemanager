@@ -7,11 +7,7 @@
 #include "base/paths.h"
 #include "base/settings.h"
 
-#include <algorithm>
-
 namespace fm {
-
-static constexpr size_t kMaxRecentServers = 10;
 
 Preferences& Preferences::instance()
 {
@@ -129,23 +125,6 @@ void Preferences::setSidebarWidth(double width)
         return;
     m_sidebarWidth = width;
     save();
-}
-
-std::vector<std::string> Preferences::recentServers() const
-{
-    m_settings->reload();
-    return m_settings->stringListValue("Network/recentServers");
-}
-
-void Preferences::addRecentServer(const std::string& address)
-{
-    std::vector<std::string> servers = recentServers();
-    std::erase(servers, address);
-    servers.insert(servers.begin(), address);
-    if (servers.size() > kMaxRecentServers)
-        servers.resize(kMaxRecentServers);
-    m_settings->setValue("Network/recentServers", servers);
-    m_settings->sync();
 }
 
 } // namespace fm

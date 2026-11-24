@@ -799,6 +799,14 @@ msgstr ""
 msgid "Connect"
 msgstr ""
 
+#: src/views/sidebar.cpp
+msgid "Remove from Network Drives"
+msgstr ""
+
+#: src/views/sidebar.cpp
+msgid "Disconnect"
+msgstr ""
+
 #: src/dialogs/serverdialogs.cpp
 msgid "Connect to Server"
 msgstr ""
@@ -1184,7 +1192,7 @@ msgstr ""
 msgid "Go to Location…"
 msgstr ""
 
-#: src/views/folderwindow.cpp
+#: src/model/places.cpp src/views/folderwindow.cpp src/views/sidebar.cpp
 msgid "Connect to Server…"
 msgstr ""
 

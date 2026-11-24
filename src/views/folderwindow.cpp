@@ -13,6 +13,7 @@
 
 #include "base/event_loop.h"
 #include "base/i18n.h"
+#include "base/strings.h"
 #include "ui/about_dialog.h"
 #include "ui/application.h"
 #include "ui/color_provider.h"
@@ -58,6 +59,21 @@ static constexpr double kBarHeight = 34;
 static constexpr double kMinimumWidth = 600;
 static constexpr double kMinimumContentWidth = kMinimumWidth - SideBar::kDefaultWidth;
 static constexpr double kNewTabButtonSize = 28;
+
+// A server address typed into the location field: it is connected to, not
+// opened as a folder. A plain folder path is left to the folder.
+static bool isNetworkAddress(const std::string& text)
+{
+    const std::string value(base::strings::trimmed(text));
+    if (value.starts_with("\\\\"))
+        return true;
+    const size_t colon = value.find("://");
+    if (colon == std::string::npos)
+        return false;
+    const std::string scheme = base::strings::toAsciiLower(value.substr(0, colon));
+    return scheme == "smb" || scheme == "sftp" || scheme == "ssh";
+}
+
 // From the track's end and from the window's edge to the button.
 static constexpr double kNewTabStartGap = 2;
 static constexpr double kNewTabEndMargin = 10;
@@ -510,6 +526,10 @@ FolderWindow::FolderWindow(FileManagerHost* host, const FolderPage::Start& start
             page->openUrl(path);
     };
     m_pathBar->onEditorAccepted = [this](const std::string& path) {
+        if (isNetworkAddress(path)) {
+            m_sidebar->connectToLocation(path);
+            return;
+        }
         if (FolderPage* page = currentPage())
             page->openUrl(path);
     };
